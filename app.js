@@ -69,6 +69,17 @@
     document.getElementById("toastStack").appendChild(item);
     setTimeout(() => item.remove(), 3200);
   }
+  function authErrorMessage(error) {
+    const code = String(error?.code || "").toLowerCase();
+    const message = String(error?.message || "");
+    if (code === "over_email_send_rate_limit" || /email.*rate limit|rate limit.*email/i.test(message)) {
+      return "Đã hết giới hạn 2 email đăng nhập mỗi giờ của Supabase Free. Vui lòng chờ khoảng 30–60 phút rồi chỉ bấm gửi một lần.";
+    }
+    if (code === "email_address_not_authorized" || /email address not authorized/i.test(message)) {
+      return "Gmail này chưa được Supabase cho phép nhận email. Hãy dùng đúng Gmail Owner đã đăng ký.";
+    }
+    return message || "Không thể gửi liên kết đăng nhập. Vui lòng thử lại sau.";
+  }
   function persist() {
     // Dữ liệu riêng tư không bao giờ được lưu vào localStorage hoặc GitHub Pages.
   }
@@ -104,13 +115,15 @@
       button.disabled = true;
       button.textContent = "Đang gửi…";
       const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split("#")[0], shouldCreateUser: true } });
-      button.disabled = false;
-      button.textContent = error ? "Thử gửi lại" : "Gửi lại link";
+      const friendlyError = error ? authErrorMessage(error) : "";
+      const rateLimited = error && friendlyError.includes("2 email đăng nhập mỗi giờ");
+      button.disabled = Boolean(rateLimited);
+      button.textContent = rateLimited ? "Hãy thử lại sau 30–60 phút" : error ? "Thử gửi lại" : "Gửi lại link";
       feedback.className = `login-feedback ${error ? "error" : "success"}`;
       feedback.innerHTML = error
-        ? `Không gửi được: ${escapeHtml(error.message)}`
+        ? `Không gửi được: ${escapeHtml(friendlyError)}`
         : `Đã gửi đến <strong>${escapeHtml(email)}</strong>. Hãy kiểm tra Hộp thư đến và Spam, sau đó mở link trên cùng thiết bị này.`;
-      toast(error ? error.message : `Đã gửi link đến ${email}.`, error ? "warning" : "success");
+      toast(error ? friendlyError : `Đã gửi link đến ${email}.`, error ? "warning" : "success");
     });
     document.getElementById("signOutDenied")?.addEventListener("click", async () => { await db.auth.signOut(); location.reload(); });
     document.getElementById("retryLoad")?.addEventListener("click", () => location.reload());
