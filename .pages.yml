@@ -1,0 +1,178 @@
+media:
+  input: media
+  output: /media
+
+content:
+  - name: workspace
+    label: Workspace settings
+    type: file
+    path: data/site.json
+    format: json
+    fields:
+      - name: workspaceName
+        label: Workspace name
+        type: string
+        required: true
+      - name: description
+        label: Description
+        type: text
+      - name: timezone
+        label: Timezone
+        type: select
+        options:
+          values:
+            - value: Asia/Ho_Chi_Minh
+              label: Vietnam (GMT+7)
+            - value: UTC
+              label: UTC
+      - name: language
+        label: Language
+        type: select
+        options:
+          values:
+            - value: vi
+              label: Vietnamese
+            - value: en
+              label: English
+
+  - name: channels
+    label: Channels
+    type: file
+    path: data/channels.json
+    format: json
+    list: true
+    fields:
+      - name: id
+        type: string
+      - name: name
+        label: Channel name
+        type: string
+        required: true
+      - name: platform
+        type: select
+        options:
+          values: [YouTube, TikTok, Instagram, Facebook]
+      - name: handle
+        type: string
+      - name: followers
+        type: number
+      - name: views
+        type: number
+      - name: posts
+        type: number
+      - name: color
+        type: string
+      - name: active
+        type: boolean
+
+  - name: content_items
+    label: Content library
+    type: file
+    path: data/content.json
+    format: json
+    list: true
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+        required: true
+      - name: channel
+        type: string
+      - name: platform
+        type: select
+        options:
+          values: [YouTube, TikTok, Instagram, Facebook]
+      - name: status
+        type: select
+        options:
+          values: [Idea, Script, Editing, Review, Approved, Scheduled, Published, Failed, Removed]
+      - name: date
+        type: date
+      - name: owner
+        type: string
+      - name: type
+        label: Content pillar
+        type: string
+      - name: views
+        type: number
+      - name: likes
+        type: number
+      - name: comments
+        type: number
+      - name: shares
+        type: number
+      - name: saves
+        type: number
+      - name: avgWatch
+        label: Average watch time
+        type: string
+      - name: retention
+        type: number
+      - name: score
+        label: Performance score
+        type: number
+      - name: url
+        label: Published URL
+        type: string
+
+  - name: automations
+    label: Automations
+    type: file
+    path: data/automations.json
+    format: json
+    list: true
+    fields:
+      - name: id
+        type: string
+      - name: title
+        type: string
+        required: true
+      - name: description
+        type: text
+      - name: icon
+        type: string
+      - name: enabled
+        type: boolean
+
+  - name: team
+    label: Team display
+    type: file
+    path: data/team.json
+    format: json
+    list: true
+    fields:
+      - name: id
+        type: string
+      - name: name
+        type: string
+      - name: email
+        type: string
+      - name: role
+        type: select
+        options:
+          values: [Owner, Admin, Content Manager, Scriptwriter, Editor, Reviewer, Viewer]
+      - name: initials
+        type: string
+      - name: color
+        type: string
+      - name: status
+        type: select
+        options:
+          values: [Active, Invited, Suspended]
+
+settings:
+  content:
+    merge: true
+  commit:
+    identity: user
+    templates:
+      create: "content(create): {path}"
+      update: "content(update): {path}"
+      delete: "content(delete): {path}"
+      rename: "content(rename): {oldPath} -> {newPath}"
+
+actions:
+  - name: deploy-site
+    label: Deploy website
+    workflow: pages.yml

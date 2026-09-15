@@ -1,0 +1,31 @@
+name: Sync Pages CMS to Supabase
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    if: ${{ secrets.SUPABASE_URL != '' && secrets.CMS_SYNC_SECRET != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send CMS data to TPLabs ContentOps
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          CMS_SYNC_SECRET: ${{ secrets.CMS_SYNC_SECRET }}
+        run: |
+          jq -n \
+            --slurpfile site data/site.json \
+            --slurpfile channels data/channels.json \
+            --slurpfile content data/content.json \
+            --slurpfile automations data/automations.json \
+            '{site:$site[0],channels:$channels[0],content:$content[0],automations:$automations[0]}' > payload.json
+          curl --fail-with-body \
+            -H "Content-Type: application/json" \
+            -H "x-cms-sync-secret: $CMS_SYNC_SECRET" \
+            --data-binary @payload.json \
+            "$SUPABASE_URL/functions/v1/sync-cms"

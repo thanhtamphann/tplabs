@@ -1,0 +1,8 @@
+[
+  {"id":"a1","title":"Approved → Publishing queue","description":"Khi nội dung được duyệt, tự chuyển vào hàng chờ đăng.","icon":"↗","enabled":true},
+  {"id":"a2","title":"Post-publish metric sync","description":"Đồng bộ sau 1h, 6h, 24h, 3 ngày và 7 ngày.","icon":"↻","enabled":true},
+  {"id":"a3","title":"High performance alert","description":"Thông báo khi lượt xem cao hơn trung bình kênh 50%.","icon":"↥","enabled":true},
+  {"id":"a4","title":"Low retention warning","description":"Cảnh báo Content Manager khi retention dưới 35%.","icon":"!","enabled":true},
+  {"id":"a5","title":"Weekly email report","description":"Gửi báo cáo tổng hợp vào 08:00 sáng thứ Hai.","icon":"✉","enabled":false},
+  {"id":"a6","title":"Repurpose top content","description":"Tạo task mới khi Performance Score lớn hơn 85.","icon":"⎘","enabled":false}
+]
