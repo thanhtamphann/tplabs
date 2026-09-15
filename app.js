@@ -88,21 +88,29 @@
     setAuthLocked(true);
     const screens = {
       setup: ["TPLabs đang ở chế độ riêng tư", "Database bảo mật đang chờ hoàn tất kết nối. Không có nội dung nào được tải hoặc lưu công khai.", ""],
-      login: ["Đăng nhập TPLabs", "Chỉ Gmail đã được Owner cấp quyền mới có thể truy cập nội dung.", '<form id="emailLoginForm" class="email-login"><input id="loginEmail" type="email" autocomplete="email" placeholder="yourname@gmail.com" required><button class="button primary google-button" type="submit">Gửi link đăng nhập</button></form><div class="auth-separator"><span>hoặc</span></div><button class="button secondary google-button" id="googleSignIn">G&nbsp; Đăng nhập bằng Google</button>'],
+      login: ["Đăng nhập TPLabs", "Chỉ Gmail đã được Owner cấp quyền mới có thể truy cập nội dung.", '<form id="emailLoginForm" class="email-login"><input id="loginEmail" type="email" inputmode="email" autocomplete="email" placeholder="yourname@gmail.com" required><button class="button primary google-button" id="emailLoginButton" type="submit">Gửi link đăng nhập</button><p id="loginFeedback" class="login-feedback" aria-live="polite"></p></form>'],
       denied: ["Tài khoản chưa được cấp quyền", `Gmail ${escapeHtml(detail)} không nằm trong danh sách truy cập của TPLabs.`, '<button class="button secondary google-button" id="signOutDenied">Đăng xuất</button>'],
       error: ["Không thể mở workspace", "TPLabs đã khóa dữ liệu để đảm bảo riêng tư. Vui lòng thử lại sau khi kiểm tra kết nối Supabase.", '<button class="button secondary google-button" id="retryLoad">Thử lại</button>']
     };
     const [title, message, action] = screens[kind];
-    page.innerHTML = `<div class="auth-gate"><article class="auth-card"><div class="auth-logo">TP</div><span class="eyebrow">PRIVATE CONTENT HUB</span><h1>${title}</h1><p>${message}</p>${action}<div class="privacy-note">🔒 Dữ liệu được bảo vệ bằng Google Login, danh sách Gmail cho phép và Row Level Security.</div></article></div>`;
-    document.getElementById("googleSignIn")?.addEventListener("click", async () => {
-      const { error } = await db.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.href.split("#")[0] } });
-      if (error) toast(error.message, "warning");
-    });
+    page.innerHTML = `<div class="auth-gate"><article class="auth-card"><div class="auth-logo">TP</div><span class="eyebrow">PRIVATE CONTENT HUB</span><h1>${title}</h1><p>${message}</p>${action}<div class="privacy-note">🔒 Dữ liệu được bảo vệ bằng liên kết đăng nhập Gmail, danh sách tài khoản cho phép và Row Level Security.</div></article></div>`;
     document.getElementById("emailLoginForm")?.addEventListener("submit", async event => {
       event.preventDefault();
-      const email = document.getElementById("loginEmail").value.trim().toLowerCase();
+      const input = document.getElementById("loginEmail");
+      const button = document.getElementById("emailLoginButton");
+      const feedback = document.getElementById("loginFeedback");
+      const email = input.value.trim().toLowerCase();
+      if (!confirm(`Gửi link đăng nhập đến:\n${email}\n\nHãy kiểm tra kỹ địa chỉ Gmail trước khi tiếp tục.`)) return;
+      button.disabled = true;
+      button.textContent = "Đang gửi…";
       const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split("#")[0], shouldCreateUser: true } });
-      toast(error ? error.message : "Đã gửi link đăng nhập. Hãy kiểm tra Gmail.", error ? "warning" : "success");
+      button.disabled = false;
+      button.textContent = error ? "Thử gửi lại" : "Gửi lại link";
+      feedback.className = `login-feedback ${error ? "error" : "success"}`;
+      feedback.innerHTML = error
+        ? `Không gửi được: ${escapeHtml(error.message)}`
+        : `Đã gửi đến <strong>${escapeHtml(email)}</strong>. Hãy kiểm tra Hộp thư đến và Spam, sau đó mở link trên cùng thiết bị này.`;
+      toast(error ? error.message : `Đã gửi link đến ${email}.`, error ? "warning" : "success");
     });
     document.getElementById("signOutDenied")?.addEventListener("click", async () => { await db.auth.signOut(); location.reload(); });
     document.getElementById("retryLoad")?.addEventListener("click", () => location.reload());
