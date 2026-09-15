@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -30,7 +30,7 @@ Deno.serve(async (request) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
 
-    const { data: memberships } = await admin.from("workspace_members").select("workspace_id").eq("user_id", user.id).eq("status", "active");
+    const { data: memberships } = await admin.from("workspace_members").select("workspace_id,role").eq("user_id", user.id).eq("status", "active").in("role", ["owner","admin","content_manager"]);
     const workspaceIds = (memberships ?? []).map((m: { workspace_id: string }) => m.workspace_id);
     if (!workspaceIds.length) return new Response(JSON.stringify({ synced: 0 }), { headers: { ...cors, "Content-Type": "application/json" } });
 

@@ -1,58 +1,50 @@
 # TPLabs ContentOps
 
-Website quản lý nội dung đa kênh dành cho Thanh Tam Studio. Giao diện được triển khai bằng GitHub Pages, nội dung cấu hình có thể chỉnh sửa bằng Pages CMS, còn dữ liệu vận hành và xác thực dùng Supabase.
+Website quản lý nội dung đa kênh cá nhân, triển khai bằng GitHub Pages và lưu dữ liệu riêng tư trong Supabase.
 
-## Chức năng
+## Bảo mật và quyền truy cập
 
-- Dashboard tổng hợp hiệu suất.
-- Content Library, Calendar và Production Board.
+- Giao diện công khai chỉ chứa mã ứng dụng, không chứa nội dung, kênh, email thành viên hoặc số liệu thật.
+- Người dùng phải đăng nhập bằng Gmail.
+- Gmail phải nằm trong danh sách do Owner cấp quyền; đăng nhập thành công nhưng chưa được cấp quyền vẫn không xem được dữ liệu.
+- PostgreSQL Row Level Security kiểm tra quyền ở máy chủ cho mọi thao tác.
+- Owner có toàn quyền thêm, sửa và xóa workspace, nội dung, kênh, bài đăng, metrics, automation, media và thành viên.
+- Khi Owner thu hồi một Gmail, RLS chặn mọi truy vấn tiếp theo ngay cả khi phiên đăng nhập cũ còn tồn tại.
+- `service_role`, Google Client Secret và token mạng xã hội tuyệt đối không được lưu trong repository hoặc `config.js`.
+
+## Phân hệ
+
+- Overview, Content Library, Calendar và Production Board.
 - Publishing Queue và Post-Publish Tracking.
-- Thêm link bài đăng, tự nhận diện nền tảng và lưu Post/Video ID.
+- Thêm link bài đăng, nhận diện nền tảng và Post/Video ID.
 - Views, likes, comments, shares, saves, watch time, retention và Performance Score.
-- Thêm/xóa không giới hạn kênh.
-- Automation Builder và lịch đồng bộ sau đăng.
-- Mời thành viên bằng Gmail, phân quyền theo vai trò và kênh.
-- Media Library, Analytics và xuất CSV.
-- Responsive trên desktop, tablet và điện thoại.
+- Kênh không giới hạn, Automation Builder, Team và phân quyền theo kênh.
+- Media Library lưu liên kết Drive/kho cá nhân để không dùng dung lượng cloud trả phí.
+- Analytics và xuất CSV.
 
-## 1. GitHub Pages
+## Chi phí và lưu trữ
 
-Repository đã có workflow `.github/workflows/pages.yml`. Trong GitHub, mở **Settings → Pages → Source** và chọn **GitHub Actions**. Mỗi lần thay đổi nhánh `main`, website sẽ tự triển khai lại.
+- GitHub Pages: dùng gói miễn phí.
+- Supabase: project đang dùng gói Free, chi phí tạo project được xác nhận là 0 USD/tháng.
+- Không bật add-on trả phí.
+- File video/ảnh lớn nên để ở Google Drive hoặc ổ cứng cá nhân; TPLabs chỉ lưu metadata và link. Đây là cách phù hợp để quản lý khoảng 50 GB mà không phải mua thêm Supabase Storage.
 
-## 2. Pages CMS
+## GitHub Pages và Pages CMS
 
-File `.pages.yml` tại thư mục gốc cho phép Pages CMS chỉnh:
+Workflow `.github/workflows/pages.yml` tự triển khai website khi nhánh `main` thay đổi. Pages CMS chỉ được phép chỉnh `data/site.json`, tức thông tin giao diện công khai. Nội dung vận hành riêng tư không được lưu trong Pages CMS vì repository và mã GitHub Pages có thể xem công khai.
 
-- Workspace settings
-- Channels
-- Content library
-- Automations
-- Team display
+## Supabase
 
-Mở [Pages CMS](https://app.pagescms.org), đăng nhập GitHub và chọn repository này. Thay đổi được commit về GitHub và workflow Pages tự xuất bản lại.
+- Schema gốc: `supabase/schema.sql`.
+- Edge Function `invite-member`: cấp, đổi hoặc thu hồi quyền Gmail; yêu cầu JWT hợp lệ.
+- Edge Function `sync-metrics`: đồng bộ số liệu; chỉ Owner, Admin hoặc Content Manager được gọi.
+- `config.js` chỉ chứa Project URL và publishable key; hai giá trị này được thiết kế để dùng phía trình duyệt và luôn được bảo vệ bởi RLS.
+- Google Login có thể bật thêm trong Supabase Authentication. Email magic link được hỗ trợ sẵn để đăng nhập bằng Gmail.
 
-## 3. Supabase và đăng nhập Google
+## Trạng thái kết nối nền tảng
 
-1. Tạo Supabase project do chính bạn sở hữu.
-2. Chạy toàn bộ `supabase/schema.sql` trong SQL Editor.
-3. Trong Authentication → Providers, bật Google.
-4. Thêm GitHub Pages URL vào Authentication → URL Configuration.
-5. Điền `supabaseUrl` và `supabaseAnonKey` trong `config.js`.
-6. Deploy ba Edge Functions `sync-metrics`, `invite-member` và `sync-cms`.
-7. Thêm `YOUTUBE_API_KEY` vào Edge Function secrets nếu dùng YouTube sync.
-
-Không đưa `SUPABASE_SERVICE_ROLE_KEY`, Google Client Secret hoặc token của mạng xã hội vào GitHub hay `config.js`.
-
-Để dữ liệu chỉnh trong Pages CMS tự cập nhật sang ứng dụng live, thêm GitHub Actions secrets `SUPABASE_URL` và `CMS_SYNC_SECRET`. Trong Supabase Edge Function secrets, thêm cùng `CMS_SYNC_SECRET` và `CMS_WORKSPACE_ID`. Workflow `sync-cms.yml` sẽ tự chạy khi file trong `data/` thay đổi.
-
-## 4. Đồng bộ nền tảng
-
-`sync-metrics` đã có connector YouTube cho views, likes và comments. Watch time, retention và các chỉ số riêng tư cần YouTube Analytics OAuth. TikTok, Instagram và Facebook cần ứng dụng developer được nền tảng xét duyệt; sau khi có quyền, bổ sung connector vào Edge Function và lưu token phía server.
-
-## Chế độ Demo
-
-Khi chưa cấu hình Supabase, website chạy ở Demo Mode với dữ liệu mẫu. Các thay đổi được giữ trên thiết bị hiện tại để kiểm tra giao diện. Sau khi cấu hình Supabase, dữ liệu dùng chung phải được lưu vào PostgreSQL và bảo vệ bằng Row Level Security.
+Thêm link bài đăng và lưu chỉ số hoạt động ngay. Đồng bộ tự động YouTube cần `YOUTUBE_API_KEY`; watch time/retention cần YouTube Analytics OAuth. TikTok, Instagram và Facebook cần developer app được nền tảng xét duyệt. Nếu chưa có API, hệ thống vẫn quản lý nội dung, lịch, thành viên, file và URL bình thường.
 
 ## Quyền sở hữu
 
-Mã nguồn, repository, tên miền, Supabase project và các developer app nên cùng thuộc tài khoản của Owner. Repository không cấp giấy phép sử dụng lại cho bên thứ ba; mọi quyền thuộc chủ sở hữu repository.
+Repository GitHub, Supabase project và dữ liệu đều thuộc tài khoản của Owner. Không có giấy phép cho bên thứ ba sử dụng lại mã nguồn.

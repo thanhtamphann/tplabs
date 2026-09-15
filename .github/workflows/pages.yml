@@ -29,7 +29,8 @@ jobs:
         run: |
           mkdir public-site
           cp index.html styles.css app.js config.js .nojekyll public-site/
-          cp -R data public-site/
+          mkdir public-site/data
+          cp data/site.json public-site/data/site.json
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:

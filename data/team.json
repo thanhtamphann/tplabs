@@ -1,6 +1,0 @@
-[
-  {"id":"u1","name":"Thanh Tam","email":"owner@example.com","role":"Owner","initials":"TP","color":"#7357e8","status":"Active"},
-  {"id":"u2","name":"Minh Anh","email":"minhanh@example.com","role":"Content Manager","initials":"MA","color":"#ff6b6b","status":"Active"},
-  {"id":"u3","name":"Quang Huy","email":"quanghuy@example.com","role":"Editor","initials":"QH","color":"#3b82f6","status":"Active"},
-  {"id":"u4","name":"Linh Chi","email":"linhchi@example.com","role":"Scriptwriter","initials":"LC","color":"#1fab75","status":"Active"}
-]
