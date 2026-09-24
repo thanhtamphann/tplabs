@@ -114,7 +114,7 @@
       if (!confirm(`Gửi link đăng nhập đến:\n${email}\n\nHãy kiểm tra kỹ địa chỉ Gmail trước khi tiếp tục.`)) return;
       button.disabled = true;
       button.textContent = "Đang gửi…";
-      const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split("#")[0], shouldCreateUser: true } });
+      const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: "https://thanhtamphann.github.io/tplabs/", shouldCreateUser: true } });
       const friendlyError = error ? authErrorMessage(error) : "";
       const rateLimited = error && friendlyError.includes("2 email đăng nhập mỗi giờ");
       button.disabled = Boolean(rateLimited);
