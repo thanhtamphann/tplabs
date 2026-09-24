@@ -4,6 +4,6 @@ window.CONTENTOPS_CONFIG = {
   supabaseAnonKey: "sb_publishable_kMYt2nVQpoN31YzMLiDaOw_lr7CnZGh",
   pagesCmsUrl: "https://app.pagescms.org",
   workspaceName: "TPLabs",
-  requireAuth: true,
+  requireAuth: false,
   timezone: "Asia/Ho_Chi_Minh"
 };
