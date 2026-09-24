@@ -72,17 +72,6 @@
     document.getElementById("toastStack").appendChild(item);
     setTimeout(() => item.remove(), 3200);
   }
-  function authErrorMessage(error) {
-    const code = String(error?.code || "").toLowerCase();
-    const message = String(error?.message || "");
-    if (code === "over_email_send_rate_limit" || /email.*rate limit|rate limit.*email/i.test(message)) {
-      return "Đã hết giới hạn 2 email đăng nhập mỗi giờ của Supabase Free. Vui lòng chờ khoảng 30–60 phút rồi chỉ bấm gửi một lần.";
-    }
-    if (code === "email_address_not_authorized" || /email address not authorized/i.test(message)) {
-      return "Gmail này chưa được Supabase cho phép nhận email. Hãy dùng đúng Gmail Owner đã đăng ký.";
-    }
-    return message || "Không thể gửi liên kết đăng nhập. Vui lòng thử lại sau.";
-  }
   function persist() {
     if (!localMode) return;
     const payload = {
@@ -136,122 +125,18 @@
     toast("Tài khoản này không có quyền thực hiện thao tác.", "warning");
     return false;
   }
-  function setAuthLocked(locked) {
-    document.body.classList.toggle("auth-locked", locked);
-    if (locked) nav.innerHTML = "";
-  }
-  function renderAccessScreen(kind, detail = "") {
-    setAuthLocked(true);
-    const screens = {
-      setup: ["TPLabs đang ở chế độ riêng tư", "Database bảo mật đang chờ hoàn tất kết nối. Không có nội dung nào được tải hoặc lưu công khai.", ""],
-      login: ["Đăng nhập TPLabs", "Chỉ Gmail đã được Owner cấp quyền mới có thể truy cập nội dung.", '<form id="emailLoginForm" class="email-login"><input id="loginEmail" type="email" inputmode="email" autocomplete="email" placeholder="yourname@gmail.com" required><button class="button primary google-button" id="emailLoginButton" type="submit">Gửi link đăng nhập</button><p id="loginFeedback" class="login-feedback" aria-live="polite"></p></form>'],
-      denied: ["Tài khoản chưa được cấp quyền", `Gmail ${escapeHtml(detail)} không nằm trong danh sách truy cập của TPLabs.`, '<button class="button secondary google-button" id="signOutDenied">Đăng xuất</button>'],
-      error: ["Không thể mở workspace", detail || "TPLabs chưa kết nối được database. Nếu Supabase vừa được khôi phục, hãy đợi hệ thống bật lại rồi bấm Thử lại.", '<button class="button secondary google-button" id="retryLoad">Thử lại</button>']
-    };
-    const [title, message, action] = screens[kind];
-    page.innerHTML = `<div class="auth-gate"><article class="auth-card"><div class="auth-logo">TP</div><span class="eyebrow">PRIVATE CONTENT HUB</span><h1>${title}</h1><p>${message}</p>${action}<div class="privacy-note">🔒 Dữ liệu được bảo vệ bằng liên kết đăng nhập Gmail, danh sách tài khoản cho phép và Row Level Security.</div></article></div>`;
-    document.getElementById("emailLoginForm")?.addEventListener("submit", async event => {
-      event.preventDefault();
-      const input = document.getElementById("loginEmail");
-      const button = document.getElementById("emailLoginButton");
-      const feedback = document.getElementById("loginFeedback");
-      const email = input.value.trim().toLowerCase();
-      if (!confirm(`Gửi link đăng nhập đến:\n${email}\n\nHãy kiểm tra kỹ địa chỉ Gmail trước khi tiếp tục.`)) return;
-      button.disabled = true;
-      button.textContent = "Đang gửi…";
-      const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: "https://thanhtamphann.github.io/tplabs/", shouldCreateUser: true } });
-      const friendlyError = error ? authErrorMessage(error) : "";
-      const rateLimited = error && friendlyError.includes("2 email đăng nhập mỗi giờ");
-      button.disabled = Boolean(rateLimited);
-      button.textContent = rateLimited ? "Hãy thử lại sau 30–60 phút" : error ? "Thử gửi lại" : "Gửi lại link";
-      feedback.className = `login-feedback ${error ? "error" : "success"}`;
-      feedback.innerHTML = error
-        ? `Không gửi được: ${escapeHtml(friendlyError)}`
-        : `Đã gửi đến <strong>${escapeHtml(email)}</strong>. Hãy kiểm tra Hộp thư đến và Spam, sau đó mở link trên cùng thiết bị này.`;
-      toast(error ? friendlyError : `Đã gửi link đến ${email}.`, error ? "warning" : "success");
-    });
-    document.getElementById("signOutDenied")?.addEventListener("click", async () => { await db.auth.signOut(); location.reload(); });
-    document.getElementById("retryLoad")?.addEventListener("click", () => location.reload());
-  }
-  function renderLogin() {
-    renderAccessScreen("login");
-  }
-  async function loadLiveData() {
-    db = window.supabase.createClient(window.CONTENTOPS_CONFIG.supabaseUrl, window.CONTENTOPS_CONFIG.supabaseAnonKey);
-    const { data: authData, error: authError } = await db.auth.getSession();
-    if (authError) throw authError;
-    if (!authData.session) { renderLogin(); return false; }
-    currentUser = authData.session.user;
-    const { data: memberships, error: membershipError } = await db.from("workspace_members").select("workspace_id,role,display_name,email,status").eq("status", "active").limit(1);
-    if (membershipError) throw membershipError;
-    if (!memberships?.length) {
-      renderAccessScreen("denied", currentUser.email || "này");
-      return false;
-    }
-    workspaceId = memberships[0].workspace_id;
-    state.role = memberships[0].role;
-    state.authenticated = true;
-    const [channelsRes, contentRes, postsRes, membersRes, automationsRes, mediaRes] = await Promise.all([
-      db.from("channels").select("*").eq("workspace_id", workspaceId).order("created_at"),
-      db.from("content_items").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
-      db.from("published_posts").select("*,content_items(title,content_pillar,owner_name,due_date),channels(name)").eq("workspace_id", workspaceId).order("published_at", { ascending: false }),
-      db.from("workspace_members").select("*").eq("workspace_id", workspaceId),
-      db.from("automations").select("*").eq("workspace_id", workspaceId).order("created_at"),
-      db.from("media_assets").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false })
-    ]);
-    const errors = [channelsRes, contentRes, postsRes, membersRes, automationsRes, mediaRes].map(x=>x.error).filter(Boolean);
-    if (errors.length) throw errors[0];
-    state.channels = (channelsRes.data || []).map(x=>({ id:x.id,name:x.name,platform:x.platform,handle:x.handle||x.channel_url||"",followers:Number(x.followers||0),views:Number(x.total_views||0),posts:Number(x.post_count||0),color:x.color||platformColor(x.platform),active:x.active }));
-    const publishedIds = new Set((postsRes.data || []).map(x=>x.content_id));
-    state.content = (contentRes.data || []).filter(x=>!publishedIds.has(x.id)).map(x=>({ id:x.id,title:x.title,channel:state.channels.find(c=>c.id===x.primary_channel_id)?.name||"Chưa chọn",platform:x.primary_platform||"—",status:x.status[0].toUpperCase()+x.status.slice(1),date:x.due_date||"—",owner:x.owner_name||"Chưa giao",type:x.content_pillar||"General",views:0,likes:0,comments:0,shares:0,saves:0,avgWatch:"—",retention:0,score:0,url:"" }));
-    state.content.unshift(...(postsRes.data || []).map(x=>({ id:x.content_id,title:x.content_items?.title||"Untitled",channel:x.channels?.name||"Chưa chọn",platform:x.platform,status:x.status[0].toUpperCase()+x.status.slice(1),date:(x.published_at||"").slice(0,10)||"—",owner:x.content_items?.owner_name||"Chưa giao",type:x.content_items?.content_pillar||"General",views:Number(x.views||0),likes:Number(x.likes||0),comments:Number(x.comments||0),shares:Number(x.shares||0),saves:Number(x.saves||0),avgWatch:x.average_watch_seconds?`${Math.floor(x.average_watch_seconds/60).toString().padStart(2,"0")}:${Math.round(x.average_watch_seconds%60).toString().padStart(2,"0")}`:"—",retention:Number(x.retention_rate||0),score:Number(x.performance_score||0),url:x.post_url,publishedPostId:x.id })));
-    state.team = (membersRes.data || []).map(x=>({ id:x.user_id,name:x.display_name||x.email,email:x.email,role:x.role.split("_").map(y=>y[0].toUpperCase()+y.slice(1)).join(" "),initials:(x.display_name||x.email).split(/\s+/).map(y=>y[0]).slice(-2).join("").toUpperCase(),color:"#7357e8",status:x.status[0].toUpperCase()+x.status.slice(1) }));
-    state.automations = (automationsRes.data || []).map(x=>({ id:x.id,title:x.title,description:`Trigger: ${x.trigger_type}`,icon:"ϟ",enabled:x.enabled }));
-    state.media = (mediaRes.data || []).map(x=>({ id:x.id,name:x.file_name,url:x.storage_path,type:x.mime_type||"Link",size:Number(x.size_bytes||0) }));
-    setAuthLocked(false);
-    const displayName = memberships[0].display_name || currentUser.user_metadata?.full_name || currentUser.email;
-    document.querySelector("#profileButton strong").textContent = displayName;
-    document.querySelector("#profileButton small").textContent = state.role === "owner" ? "Owner" : state.role;
-    return true;
+  function setAuthLocked() {
+    document.body.classList.remove("auth-locked");
   }
   async function loadData() {
     try {
       const publicSettings = await fetch("data/site.json", { cache: "no-store" }).then(response => response.ok ? response.json() : null);
-      if (publicSettings?.workspaceName) {
-        window.CONTENTOPS_CONFIG.workspaceName = publicSettings.workspaceName;
-        document.querySelector(".workspace-card strong").textContent = publicSettings.workspaceName;
-      }
-    } catch (_) { /* Giữ cấu hình mặc định nếu Pages CMS chưa có dữ liệu. */ }
-    if (localMode) {
-      loadLocalData();
-      document.getElementById("modeBadge").textContent = "Local Owner";
-      document.getElementById("modeBadge").style.background = "var(--green-soft)";
-      render();
-      return;
-    }
-    if (state.live && window.supabase) {
-      try {
-        const ready = await loadLiveData();
-        document.getElementById("modeBadge").textContent = "Live sync";
-        document.getElementById("modeBadge").style.background = "var(--green-soft)";
-        if (ready) render();
-        return;
-      } catch (error) {
-        console.error(error);
-        const message = String(error?.message || "");
-        const backendUnavailable = /failed to fetch|network|fetch|connection|econn|unavailable/i.test(message);
-        renderAccessScreen(
-          "error",
-          backendUnavailable
-            ? "Database TPLabs đang tạm ngưng hoặc đang khởi động lại. Bấm “Thử lại” sau khi Supabase hoạt động trở lại."
-            : "Không thể tải dữ liệu TPLabs. Vui lòng kiểm tra cấu hình đăng nhập hoặc kết nối Supabase rồi thử lại."
-        );
-        return;
-      }
-    }
-    Object.assign(state, emptyWorkspace);
-    document.getElementById("modeBadge").textContent = "Private";
-    renderAccessScreen("setup");
+      if (publicSettings?.workspaceName) window.CONTENTOPS_CONFIG.workspaceName = publicSettings.workspaceName;
+    } catch (_) {}
+    loadLocalData();
+    document.getElementById("modeBadge").textContent = "Local Owner";
+    document.getElementById("modeBadge").style.background = "var(--green-soft)";
+    render();
   }
 
   function renderNav() {
@@ -676,7 +561,7 @@
   document.querySelector(".dialog-close").addEventListener("click",()=>dialog.close());
   document.querySelector(".dialog-cancel").addEventListener("click",()=>dialog.close());
   document.getElementById("globalSearch").addEventListener("input",e=>{ state.search=e.target.value.trim().toLowerCase(); if(state.route!=="content") location.hash="content"; else render(); });
-  document.getElementById("profileButton").addEventListener("click", async ()=>{ if(localMode){ toast("Bạn đang dùng Local Owner Mode — không cần đăng nhập.", "success"); return; } if(state.live && db && confirm("Đăng xuất khỏi TPLabs ContentOps?")){ await db.auth.signOut(); location.reload(); } });
+  document.getElementById("profileButton").addEventListener("click", ()=>{ toast("TPLabs Owner · Không cần đăng nhập.", "success"); });
   document.addEventListener("keydown",e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();document.getElementById("globalSearch").focus();} });
   window.addEventListener("hashchange",()=>{ state.route=location.hash.replace("#","")||"overview"; render(); });
   function registerWebMcpTools() {
