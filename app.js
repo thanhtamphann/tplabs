@@ -21,14 +21,14 @@
 
   const emptyWorkspace = { channels: [], content: [], team: [], automations: [], media: [] };
 
-  const localMode = window.CONTENTOPS_CONFIG?.requireAuth === false;
+  const localMode = true;
   const LOCAL_STORAGE_KEY = "tplabs_local_workspace_v1";
 
   const state = {
     route: location.hash.replace("#", "") || "overview",
     channels: [], content: [], team: [], automations: [], media: [],
     filter: "all", search: "", role: null, authenticated: false,
-    live: !localMode && Boolean(window.CONTENTOPS_CONFIG?.supabaseUrl && window.CONTENTOPS_CONFIG?.supabaseAnonKey)
+    live: false
   };
 
   let db = null;
