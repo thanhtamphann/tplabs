@@ -21,11 +21,14 @@
 
   const emptyWorkspace = { channels: [], content: [], team: [], automations: [], media: [] };
 
+  const localMode = window.CONTENTOPS_CONFIG?.requireAuth === false;
+  const LOCAL_STORAGE_KEY = "tplabs_local_workspace_v1";
+
   const state = {
     route: location.hash.replace("#", "") || "overview",
     channels: [], content: [], team: [], automations: [], media: [],
     filter: "all", search: "", role: null, authenticated: false,
-    live: Boolean(window.CONTENTOPS_CONFIG?.supabaseUrl && window.CONTENTOPS_CONFIG?.supabaseAnonKey)
+    live: !localMode && Boolean(window.CONTENTOPS_CONFIG?.supabaseUrl && window.CONTENTOPS_CONFIG?.supabaseAnonKey)
   };
 
   let db = null;
@@ -81,7 +84,49 @@
     return message || "Không thể gửi liên kết đăng nhập. Vui lòng thử lại sau.";
   }
   function persist() {
-    // Dữ liệu riêng tư không bao giờ được lưu vào localStorage hoặc GitHub Pages.
+    if (!localMode) return;
+    const payload = {
+      channels: state.channels,
+      content: state.content,
+      team: state.team,
+      automations: state.automations,
+      media: state.media,
+      workspaceName: window.CONTENTOPS_CONFIG.workspaceName || "TPLabs"
+    };
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+  }
+
+  function localId(prefix) {
+    const id = globalThis.crypto?.randomUUID?.() || (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    return `${prefix}-${id}`;
+  }
+
+  function loadLocalData() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || "null"); } catch (_) {}
+    state.channels = Array.isArray(saved?.channels) ? saved.channels : [];
+    state.content = Array.isArray(saved?.content) ? saved.content : [];
+    state.automations = Array.isArray(saved?.automations) ? saved.automations : [];
+    state.media = Array.isArray(saved?.media) ? saved.media : [];
+    state.team = Array.isArray(saved?.team) && saved.team.length ? saved.team : [{
+      id: "local-owner",
+      name: "TPLabs Owner",
+      email: "Local Owner",
+      role: "Owner",
+      initials: "TP",
+      color: "#7357e8",
+      status: "Active"
+    }];
+    if (saved?.workspaceName) window.CONTENTOPS_CONFIG.workspaceName = saved.workspaceName;
+    workspaceId = "local-workspace";
+    currentUser = { id: "local-owner", email: "Local Owner", user_metadata: { full_name: "TPLabs Owner" } };
+    state.role = "owner";
+    state.authenticated = true;
+    state.live = false;
+    setAuthLocked(false);
+    document.querySelector("#profileButton strong").textContent = "TPLabs Owner";
+    document.querySelector("#profileButton small").textContent = "Owner · Local";
+    document.querySelector(".workspace-card strong").textContent = window.CONTENTOPS_CONFIG.workspaceName || "TPLabs";
   }
   function can(action) {
     return permissions[state.role]?.has(action) || false;
@@ -177,6 +222,13 @@
         document.querySelector(".workspace-card strong").textContent = publicSettings.workspaceName;
       }
     } catch (_) { /* Giữ cấu hình mặc định nếu Pages CMS chưa có dữ liệu. */ }
+    if (localMode) {
+      loadLocalData();
+      document.getElementById("modeBadge").textContent = "Local Owner";
+      document.getElementById("modeBadge").style.background = "var(--green-soft)";
+      render();
+      return;
+    }
     if (state.live && window.supabase) {
       try {
         const ready = await loadLiveData();
@@ -396,6 +448,10 @@
 
   async function syncMetrics() {
     if (!requirePermission("sync")) return;
+    if (localMode) {
+      toast("Đồng bộ metrics tự động cần kết nối API. Dữ liệu local vẫn dùng bình thường.", "warning");
+      return;
+    }
     const buttons = document.querySelectorAll('[data-action="sync"]');
     buttons.forEach(b=>{ b.disabled=true; b.textContent="↻ Đang đồng bộ…"; });
     try {
@@ -419,6 +475,15 @@
     if (!requirePermission("delete")) return;
     const warning = table === "content_items" ? "Bài đăng và số liệu liên quan cũng sẽ bị xóa." : "Thao tác này không thể hoàn tác.";
     if (!confirm(`Xóa ${label}? ${warning}`)) return;
+    if (localMode) {
+      const map = { content_items: "content", channels: "channels", automations: "automations", media_assets: "media" };
+      const key = map[table];
+      if (key) state[key] = state[key].filter(item => item.id !== id);
+      persist();
+      render();
+      toast(`Đã xóa ${label}.`, "success");
+      return;
+    }
     const { error } = await db.from(table).delete().eq("workspace_id", workspaceId).eq("id", id);
     if (error) return toast(error.message, "warning");
     await loadLiveData(); render(); toast(`Đã xóa ${label}.`, "success");
@@ -428,6 +493,16 @@
     if (!requirePermission("manage_team")) return;
     if (member.role === "Owner") return toast("Không thể thay đổi tài khoản Owner.", "warning");
     if (action === "revoke" && !confirm(`Thu hồi toàn bộ quyền của ${member.email}?`)) return;
+    if (localMode) {
+      if (action === "revoke") state.team = state.team.filter(x => x.id !== member.id);
+      else {
+        member.role = role.split("_").map(x => x[0].toUpperCase() + x.slice(1)).join(" ");
+      }
+      persist();
+      render();
+      toast(action === "revoke" ? "Đã xóa thành viên khỏi máy này." : "Đã cập nhật vai trò.", "success");
+      return;
+    }
     const { error } = await db.functions.invoke("invite-member", { body: { action, workspaceId, email: member.email, userId: member.id, role } });
     if (error) return toast(error.message, "warning");
     await loadLiveData(); render(); toast(action === "revoke" ? "Đã thu hồi quyền Gmail." : "Đã cập nhật vai trò.", "success");
@@ -445,11 +520,18 @@
       else if (action === "sync") syncMetrics();
       else if (action === "export") exportCsv();
       else if (action === "save-settings" && requirePermission("settings")) {
-        db.from("workspaces").update({ name:document.getElementById("workspaceName").value.trim(),timezone:document.getElementById("workspaceTimezone").value }).eq("id",workspaceId).then(({error})=>toast(error?error.message:"Đã lưu cài đặt workspace.",error?"warning":"success"));
+        if (localMode) {
+          window.CONTENTOPS_CONFIG.workspaceName = document.getElementById("workspaceName").value.trim() || "TPLabs";
+          document.querySelector(".workspace-card strong").textContent = window.CONTENTOPS_CONFIG.workspaceName;
+          persist();
+          toast("Đã lưu cài đặt workspace trên máy này.", "success");
+        } else {
+          db.from("workspaces").update({ name:document.getElementById("workspaceName").value.trim(),timezone:document.getElementById("workspaceTimezone").value }).eq("id",workspaceId).then(({error})=>toast(error?error.message:"Đã lưu cài đặt workspace.",error?"warning":"success"));
+        }
       }
     }));
     page.querySelectorAll("[data-route-link]").forEach(b=>b.addEventListener("click",()=>location.hash=b.dataset.routeLink));
-    page.querySelectorAll("[data-toggle-automation]").forEach(b=>b.addEventListener("click",async()=>{ if(!requirePermission("update"))return; const item=state.automations.find(x=>x.id===b.dataset.toggleAutomation); const {error}=await db.from("automations").update({enabled:!item.enabled}).eq("workspace_id",workspaceId).eq("id",item.id); if(error)return toast(error.message,"warning"); item.enabled=!item.enabled; render(); toast(item.enabled?"Đã bật automation.":"Đã tắt automation.","success"); }));
+    page.querySelectorAll("[data-toggle-automation]").forEach(b=>b.addEventListener("click",async()=>{ if(!requirePermission("update"))return; const item=state.automations.find(x=>x.id===b.dataset.toggleAutomation); if(!item)return; if(localMode){ item.enabled=!item.enabled; persist(); render(); toast(item.enabled?"Đã bật automation.":"Đã tắt automation.","success"); return; } const {error}=await db.from("automations").update({enabled:!item.enabled}).eq("workspace_id",workspaceId).eq("id",item.id); if(error)return toast(error.message,"warning"); item.enabled=!item.enabled; render(); toast(item.enabled?"Đã bật automation.":"Đã tắt automation.","success"); }));
     page.querySelectorAll("[data-edit-content]").forEach(b=>b.addEventListener("click",()=>requirePermission("update")&&openDialog("content",b.dataset.editContent)));
     page.querySelectorAll("[data-delete-content]").forEach(b=>b.addEventListener("click",()=>deleteEntity("content_items",b.dataset.deleteContent,"nội dung")));
     page.querySelectorAll("[data-edit-channel]").forEach(b=>b.addEventListener("click",()=>requirePermission("update")&&openDialog("channel",b.dataset.editChannel)));
@@ -470,6 +552,73 @@
     const entityId = dialogForm.dataset.entityId;
     const neededPermission = kind === "invite" ? "invite" : kind === "member" ? "manage_team" : kind === "link" ? "publish" : entityId ? "update" : "create";
     if (!requirePermission(neededPermission)) return;
+
+    if (localMode) {
+      if (kind === "content") {
+        const channel = state.channels.find(x => x.name === data.channel);
+        const payload = {
+          title: data.title.trim(),
+          channel: channel?.name || "Chưa chọn",
+          platform: data.platform || channel?.platform || "Other",
+          status: data.status || "Idea",
+          date: data.date || "—",
+          owner: data.owner || "TPLabs Owner",
+          type: data.type?.trim() || "General",
+          views: 0, likes: 0, comments: 0, shares: 0, saves: 0,
+          avgWatch: "—", retention: 0, score: 0, url: ""
+        };
+        if (entityId) Object.assign(state.content.find(x => x.id === entityId) || {}, payload);
+        else state.content.unshift({ id: localId("content"), ...payload });
+        toast(entityId ? "Đã cập nhật nội dung." : "Đã tạo nội dung mới.", "success");
+      } else if (kind === "channel") {
+        const payload = { name:data.name.trim(), platform:data.platform, handle:data.handle.trim(), followers:0, views:0, posts:0, color:platformColor(data.platform), active:true };
+        if (entityId) Object.assign(state.channels.find(x => x.id === entityId) || {}, payload);
+        else state.channels.push({ id:localId("channel"), ...payload });
+        toast(entityId ? "Đã cập nhật kênh." : "Đã thêm kênh mới.", "success");
+      } else if (kind === "link") {
+        const item = state.content.find(x => x.title === data.contentId);
+        const platform = detectPlatform(data.url);
+        if (item) {
+          item.status = data.status || "Published";
+          item.platform = platform;
+          item.url = data.url;
+          item.date = data.publishedAt ? data.publishedAt.slice(0,10) : new Date().toISOString().slice(0,10);
+        }
+        toast(`Đã lưu link ${platform}.`, "success");
+      } else if (kind === "invite") {
+        const email = data.email.trim().toLowerCase();
+        state.team.push({
+          id: localId("member"),
+          name: email.split("@")[0],
+          email,
+          role: data.role,
+          initials: email.slice(0,2).toUpperCase(),
+          color: "#7357e8",
+          status: "Active"
+        });
+        toast("Đã thêm thành viên vào danh sách local.", "success");
+      } else if (kind === "member") {
+        const member = state.team.find(x => x.id === entityId);
+        if (member) member.role = data.role;
+        toast("Đã cập nhật vai trò.", "success");
+      } else if (kind === "media") {
+        let parsed;
+        try { parsed = new URL(data.url); } catch (_) { return toast("Link file không hợp lệ.", "warning"); }
+        if (!["http:","https:"].includes(parsed.protocol)) return toast("Chỉ chấp nhận link HTTP/HTTPS.", "warning");
+        state.media.unshift({ id:localId("media"), name:data.name.trim(), url:parsed.href, type:data.type, size:0 });
+        toast("Đã thêm liên kết file.", "success");
+      } else {
+        const payload = { title:data.title.trim(), description:`Trigger: ${data.trigger}`, trigger:data.trigger, condition:data.condition, action:data.action, icon:"ϟ", enabled:true };
+        if (entityId) Object.assign(state.automations.find(x => x.id === entityId) || {}, payload);
+        else state.automations.unshift({ id:localId("automation"), ...payload });
+        toast(entityId ? "Đã cập nhật automation." : "Đã tạo automation.", "success");
+      }
+      persist();
+      dialog.close();
+      render();
+      return;
+    }
+
     if (kind === "content") {
       const channel = state.channels.find(x=>x.name===data.channel);
       const payload = { title:data.title.trim(),content_pillar:data.type?.trim()||"General",status:data.status.toLowerCase(),due_date:data.date,owner_name:data.owner,primary_channel_id:channel?.id||null,primary_platform:data.platform };
@@ -527,7 +676,7 @@
   document.querySelector(".dialog-close").addEventListener("click",()=>dialog.close());
   document.querySelector(".dialog-cancel").addEventListener("click",()=>dialog.close());
   document.getElementById("globalSearch").addEventListener("input",e=>{ state.search=e.target.value.trim().toLowerCase(); if(state.route!=="content") location.hash="content"; else render(); });
-  document.getElementById("profileButton").addEventListener("click", async ()=>{ if(state.live && db && confirm("Đăng xuất khỏi TPLabs ContentOps?")){ await db.auth.signOut(); location.reload(); } });
+  document.getElementById("profileButton").addEventListener("click", async ()=>{ if(localMode){ toast("Bạn đang dùng Local Owner Mode — không cần đăng nhập.", "success"); return; } if(state.live && db && confirm("Đăng xuất khỏi TPLabs ContentOps?")){ await db.auth.signOut(); location.reload(); } });
   document.addEventListener("keydown",e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();document.getElementById("globalSearch").focus();} });
   window.addEventListener("hashchange",()=>{ state.route=location.hash.replace("#","")||"overview"; render(); });
   function registerWebMcpTools() {
@@ -535,7 +684,7 @@
     if (!context?.registerTool) return;
     const register = tool => { try { void Promise.resolve(context.registerTool(tool)).catch(console.error); } catch (error) { console.error(error); } };
     register({ name:"navigate_tplabs", title:"Mở khu vực TPLabs", description:"Đi tới một khu vực quản trị trong TPLabs ContentOps.", inputSchema:{ type:"object", properties:{ route:{ type:"string", enum:Object.keys(pages) } }, required:["route"], additionalProperties:false }, annotations:{ readOnlyHint:true, untrustedContentHint:false }, execute(input){ if(!pages[input.route]) throw new Error("Invalid route"); location.hash=input.route; return { route:input.route }; } });
-    register({ name:"create_content_item", title:"Tạo nội dung", description:"Tạo một nội dung mới trong workspace hiện tại và cập nhật giao diện.", inputSchema:{ type:"object", properties:{ title:{type:"string"}, channel:{type:"string"}, platform:{type:"string"}, dueDate:{type:"string"}, owner:{type:"string"} }, required:["title","channel","platform","dueDate","owner"], additionalProperties:false }, annotations:{ readOnlyHint:false, untrustedContentHint:false }, async execute(input){ if(!state.authenticated||!can("create")) throw new Error("Permission denied"); if(!input.title.trim()) throw new Error("Title is required"); const channel=state.channels.find(x=>x.name===input.channel); const {data,error}=await db.from("content_items").insert({workspace_id:workspaceId,title:input.title.trim(),status:"idea",due_date:input.dueDate,owner_name:input.owner,primary_channel_id:channel?.id||null,primary_platform:input.platform,created_by:currentUser.id}).select().single(); if(error) throw error; await loadLiveData(); render(); return {id:data.id,status:"Idea"}; } });
+    register({ name:"create_content_item", title:"Tạo nội dung", description:"Tạo một nội dung mới trong workspace hiện tại và cập nhật giao diện.", inputSchema:{ type:"object", properties:{ title:{type:"string"}, channel:{type:"string"}, platform:{type:"string"}, dueDate:{type:"string"}, owner:{type:"string"} }, required:["title","channel","platform","dueDate","owner"], additionalProperties:false }, annotations:{ readOnlyHint:false, untrustedContentHint:false }, async execute(input){ if(!state.authenticated||!can("create")) throw new Error("Permission denied"); if(!input.title.trim()) throw new Error("Title is required"); const channel=state.channels.find(x=>x.name===input.channel); if(localMode){ const item={id:localId("content"),title:input.title.trim(),channel:channel?.name||"Chưa chọn",platform:input.platform,status:"Idea",date:input.dueDate,owner:input.owner,type:"General",views:0,likes:0,comments:0,shares:0,saves:0,avgWatch:"—",retention:0,score:0,url:""}; state.content.unshift(item); persist(); render(); return {id:item.id,status:"Idea",mode:"local"}; } const {data,error}=await db.from("content_items").insert({workspace_id:workspaceId,title:input.title.trim(),status:"idea",due_date:input.dueDate,owner_name:input.owner,primary_channel_id:channel?.id||null,primary_platform:input.platform,created_by:currentUser.id}).select().single(); if(error) throw error; await loadLiveData(); render(); return {id:data.id,status:"Idea"}; } });
     register({ name:"sync_published_metrics", title:"Đồng bộ số liệu", description:"Chạy đồng bộ số liệu cho các bài đã đăng đến hạn cập nhật.", inputSchema:{type:"object",properties:{},additionalProperties:false}, annotations:{readOnlyHint:false,untrustedContentHint:true}, async execute(){ if(!state.authenticated||!can("sync")) throw new Error("Permission denied"); await syncMetrics(); return {status:"completed",mode:"live"}; } });
   }
 
