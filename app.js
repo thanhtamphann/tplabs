@@ -101,7 +101,7 @@
       setup: ["TPLabs đang ở chế độ riêng tư", "Database bảo mật đang chờ hoàn tất kết nối. Không có nội dung nào được tải hoặc lưu công khai.", ""],
       login: ["Đăng nhập TPLabs", "Chỉ Gmail đã được Owner cấp quyền mới có thể truy cập nội dung.", '<form id="emailLoginForm" class="email-login"><input id="loginEmail" type="email" inputmode="email" autocomplete="email" placeholder="yourname@gmail.com" required><button class="button primary google-button" id="emailLoginButton" type="submit">Gửi link đăng nhập</button><p id="loginFeedback" class="login-feedback" aria-live="polite"></p></form>'],
       denied: ["Tài khoản chưa được cấp quyền", `Gmail ${escapeHtml(detail)} không nằm trong danh sách truy cập của TPLabs.`, '<button class="button secondary google-button" id="signOutDenied">Đăng xuất</button>'],
-      error: ["Không thể mở workspace", "TPLabs đã khóa dữ liệu để đảm bảo riêng tư. Vui lòng thử lại sau khi kiểm tra kết nối Supabase.", '<button class="button secondary google-button" id="retryLoad">Thử lại</button>']
+      error: ["Không thể mở workspace", detail || "TPLabs chưa kết nối được database. Nếu Supabase vừa được khôi phục, hãy đợi hệ thống bật lại rồi bấm Thử lại.", '<button class="button secondary google-button" id="retryLoad">Thử lại</button>']
     };
     const [title, message, action] = screens[kind];
     page.innerHTML = `<div class="auth-gate"><article class="auth-card"><div class="auth-logo">TP</div><span class="eyebrow">PRIVATE CONTENT HUB</span><h1>${title}</h1><p>${message}</p>${action}<div class="privacy-note">🔒 Dữ liệu được bảo vệ bằng liên kết đăng nhập Gmail, danh sách tài khoản cho phép và Row Level Security.</div></article></div>`;
@@ -186,7 +186,14 @@
         return;
       } catch (error) {
         console.error(error);
-        renderAccessScreen("error");
+        const message = String(error?.message || "");
+        const backendUnavailable = /failed to fetch|network|fetch|connection|econn|unavailable/i.test(message);
+        renderAccessScreen(
+          "error",
+          backendUnavailable
+            ? "Database TPLabs đang tạm ngưng hoặc đang khởi động lại. Bấm “Thử lại” sau khi Supabase hoạt động trở lại."
+            : "Không thể tải dữ liệu TPLabs. Vui lòng kiểm tra cấu hình đăng nhập hoặc kết nối Supabase rồi thử lại."
+        );
         return;
       }
     }
